@@ -28,7 +28,7 @@ DDL = [
         id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(200) NOT NULL,
         source VARCHAR(500),
-        content TEXT,
+        content STRING,
         metadata JSON,
         tags SET(VARCHAR(50)),
         chunk_count INT DEFAULT 0,
@@ -40,7 +40,7 @@ DDL = [
         id INT AUTO_INCREMENT PRIMARY KEY,
         document_id INT NOT NULL,
         chunk_index INT NOT NULL,
-        content TEXT,
+        content STRING,
         token_count INT,
         embedding_ref VARCHAR(500),
         FOREIGN KEY (document_id) REFERENCES rag_documents(id)
@@ -49,9 +49,9 @@ DDL = [
     """
     CREATE TABLE IF NOT EXISTS rag_retrieval_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        query_text TEXT,
+        query_text STRING,
         retrieved_doc_ids SEQUENCE(INT),
-        llm_response TEXT,
+        llm_response STRING,
         relevance_scores JSON,
         created_at DATETIME DEFAULT SYS_DATETIME
     )

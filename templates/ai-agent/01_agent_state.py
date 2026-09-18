@@ -46,8 +46,8 @@ DDL = [
     CREATE TABLE IF NOT EXISTS agent_messages (
         id INT AUTO_INCREMENT PRIMARY KEY,
         session_id INT NOT NULL,
-        role VARCHAR(20) NOT NULL,
-        content TEXT,
+        message_role VARCHAR(20) NOT NULL,
+        content STRING,
         metadata JSON,
         created_at DATETIME DEFAULT SYS_DATETIME,
         FOREIGN KEY (session_id) REFERENCES agent_sessions(id)
@@ -107,7 +107,7 @@ def add_message(
     cur = conn.cursor()
     meta_json = json.dumps(metadata) if metadata else None
     cur.execute(
-        "INSERT INTO agent_messages (session_id, role, content, metadata) VALUES (?, ?, ?, ?)",
+        "INSERT INTO agent_messages (session_id, message_role, content, metadata) VALUES (?, ?, ?, ?)",
         [session_id, role, content, meta_json],
     )
     conn.commit()
@@ -153,7 +153,7 @@ def get_conversation(
     """Retrieve the full conversation for a session."""
     cur = conn.cursor()
     cur.execute(
-        "SELECT role, content, metadata, created_at "
+        "SELECT message_role, content, metadata, created_at "
         "FROM agent_messages WHERE session_id = ? ORDER BY id",
         [session_id],
     )
@@ -203,7 +203,7 @@ def main() -> None:
     # Verify JSON metadata round-trip
     cur = conn.cursor()
     cur.execute(
-        "SELECT metadata FROM agent_messages WHERE session_id = ? AND role = 'assistant'",
+        "SELECT metadata FROM agent_messages WHERE session_id = ? AND message_role = 'assistant'",
         [session_id],
     )
     row = cur.fetchone()
