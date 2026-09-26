@@ -1,10 +1,14 @@
 from __future__ import annotations
-import glob
 import os
-import runpy
-from urllib.parse import urlparse
+from pathlib import Path
+import signal
+import subprocess
+import sys
+from urllib.parse import unquote, urlparse
 
+import pycubrid
 import pytest
+from sqlalchemy.engine import make_url
 
 CUBRID_TEST_URL = os.getenv("CUBRID_TEST_URL")
 pytestmark = pytest.mark.skipif(
@@ -14,7 +18,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def setup_database_url():
+def setup_database_url(monkeypatch, app_path):
     """
     Ensure ai-agent recipes connect to the live CUBRID test instance.
 
@@ -30,27 +34,80 @@ def setup_database_url():
         return
 
     parsed = urlparse(CUBRID_TEST_URL)
-    os.environ["CUBRID_URL"] = CUBRID_TEST_URL
-    os.environ["DATABASE_URL"] = CUBRID_TEST_URL
-    os.environ["CUBRID_HOST"] = parsed.hostname or "localhost"
-    os.environ["CUBRID_PORT"] = str(parsed.port or 33000)
-    os.environ["CUBRID_USER"] = parsed.username or "dba"
-    os.environ["CUBRID_PASSWORD"] = parsed.password or ""
-    os.environ["CUBRID_DATABASE"] = parsed.path.lstrip("/") or "testdb"
+    config = {
+        "host": parsed.hostname or "localhost",
+        "port": parsed.port or 33000,
+        "user": unquote(parsed.username or "dba"),
+        "password": unquote(parsed.password or ""),
+        "database": unquote(parsed.path.lstrip("/")) or "testdb",
+    }
+    sqlalchemy_url = make_url(CUBRID_TEST_URL).set(drivername="cubrid+pycubrid")
+    monkeypatch.setenv("CUBRID_URL", CUBRID_TEST_URL)
+    monkeypatch.setenv("DATABASE_URL", sqlalchemy_url.render_as_string(hide_password=False))
+    monkeypatch.setenv("CUBRID_MCP_READONLY", "1")
+    for key, value in config.items():
+        monkeypatch.setenv(f"CUBRID_{key.upper()}", str(value))
+
+    # Only these recipes' tables are reset; children precede foreign-key parents.
+    # Use a dedicated test database: these scripts use fixed demonstration keys.
+    tables = RECIPE_TABLES[app_path.name]
+
+    def drop_recipe_tables():
+        with pycubrid.connect(**config, connect_timeout=10, read_timeout=15) as conn:
+            with conn.cursor() as cursor:
+                for table in tables:
+                    cursor.execute(f"DROP TABLE IF EXISTS {table}")
+
+    drop_recipe_tables()
+    try:
+        yield
+    finally:
+        drop_recipe_tables()
 
 
-AI_AGENT_RECIPES = glob.glob("templates/ai-agent/*.py")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RECIPE_TABLES = {
+    "01_agent_state.py": ("agent_tool_calls", "agent_messages", "agent_sessions"),
+    "02_mcp_toolchain.py": (),
+    "03_rag_metadata.py": ("rag_chunks", "rag_retrieval_log", "rag_documents"),
+    "04_agent_loop.py": (
+        "agent_tool_calls",
+        "agent_messages",
+        "agent_sessions",
+        "cookbook_agent_products",
+    ),
+    "05_chatbot_backend.py": ("chat_messages", "chat_conversations", "chat_users"),
+}
+AI_AGENT_RECIPES = [REPO_ROOT / "templates/ai-agent" / name for name in RECIPE_TABLES]
 
 
-@pytest.mark.parametrize("app_path", AI_AGENT_RECIPES)
+@pytest.mark.parametrize("app_path", AI_AGENT_RECIPES, ids=lambda path: path.name)
 def test_ai_agent_recipes_runs_without_errors(app_path):
     """
     Test that each ai-agent recipe runs to completion without raising any
     exception against a live CUBRID database instance.
 
-    Recipes are plain scripts (not Streamlit apps like the dashboard
-    recipes), so `runpy.run_path` executes each one exactly as running it
-    directly would (`if __name__ == "__main__": main()` included) - an
-    uncaught exception fails the test with its real traceback.
+    A separate, bounded Python process executes each script's __main__ and
+    releases all database sessions even if the script raises. Failures include
+    both stdout and stderr so the live traceback remains visible.
     """
-    runpy.run_path(app_path, run_name="__main__")
+    with subprocess.Popen(
+        [sys.executable, str(app_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    ) as process:
+        try:
+            output, errors = process.communicate(timeout=60)
+        except subprocess.TimeoutExpired:
+            # Terminate only this test's process group, including its MCP child.
+            os.killpg(process.pid, signal.SIGKILL)
+            output, errors = process.communicate()
+            pytest.fail(f"Recipe exceeded 60 seconds: {app_path.name}\n{output}\n{errors}")
+    assert process.returncode == 0, output + errors
+    assert "✓" in output and "working" in output
+    assert "Query failed:" not in output
+    if app_path.name == "02_mcp_toolchain.py":
+        assert "Server: cubrid-mcp-server" in output
+        assert "DROP TABLE rejected by read-only whitelist: ✓" in output
