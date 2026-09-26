@@ -50,6 +50,47 @@ Skipping any phase requires explicit justification. Trivial changes (typos, sing
 - Verify output matches expected behavior
 - `docker compose down`
 
+## Issue Labeling (cubrid-lab org standard)
+
+When creating an issue in **any cubrid-lab repository**, assign exactly one
+`priority: <value>` label and exactly one `size: <value>` label at creation time,
+alongside a type label (`bug`/`enhancement`/`documentation`/`chore`/`ci`/…) and an
+`area:` label when applicable. These must be GitHub labels, not just text in the
+issue title or body.
+
+Use the following exact names, with **one space after the colon**:
+
+- Priority: `priority: critical`, `priority: high`, `priority: medium`, `priority: low`.
+- Size: `size: XS`, `size: S`, `size: M`, `size: L`, `size: XL`.
+
+Do not introduce variants such as `priority:high`, `priority-high`, `P1`, or
+`size:S`. Reuse the repository's canonical labels; if a required label is missing,
+create it with the exact name above before filing the issue. This policy governs
+new issue creation, not bulk renaming or relabeling existing issues unless
+explicitly requested.
+
+Priority reflects urgency and impact; size estimates implementation effort and
+helps contributors pick appropriately scoped work.
+
+| Label | Meaning | Rough guide |
+|-------|---------|-------------|
+| `size: XS` | Trivial change | < ~10 lines; single-file typo/config/one-liner |
+| `size: S` | Small change | One file or one focused function; a single test or doc page |
+| `size: M` | Medium change | A few files; a new test module, a bug fix with tests, a CI job |
+| `size: L` | Large change | Cross-cutting change across many files; multi-artifact (e.g. demo GIF + video + docs) |
+| `size: XL` | Very large | Consider splitting into smaller issues before starting |
+
+Rules:
+
+1. **Size reflects effort, not importance** — a one-line fix for a critical bug is still `size: XS`.
+2. **Assign both `priority:` and `size:` when filing the issue.** If scope or impact
+   is uncertain, use a provisional estimate, explain the uncertainty in the body,
+   and add `status: needs triage` (or the repo's equivalent). Refine the estimates
+   during triage rather than omitting either required label.
+3. **`good first issue` should be `size: XS` or `size: S`.** If a good-first-issue grows
+   past `size: S`, re-scope it or drop the `good first issue` label.
+4. **`size: XL` is a signal to split**, not a green light to start a sprawling change.
+
 ## Documentation definition of done
 
 Any change that adds, renames, removes, or alters the behavior of an example — or changes supported CUBRID/driver/Python versions — MUST update the matching documentation in the **same PR**. At minimum keep in sync: `SUPPORT_MATRIX.md`, `CHANGELOG.md`, `README.md` (incl. version badges/claims), and any affected `docs/`.
